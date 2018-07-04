@@ -114,7 +114,7 @@ for i in ../processed/prinseq/*_1.fastq; do
 	fi
 
 	if (( $(echo "$(samtools --version | grep '^samtools' | sed 's/^samtools //' | cut -d . -f 1,2) >= 1.3" |bc -l) )); then
-		bowtie2 --very-sensitive --all -p ${threads} -q -x metagenome -1 ${dirname}/${name}_1.fastq -2 ${dirname}/${name}_2.fastq ${Uparam} 2> ${sampname}.bowtie2.err.txt | samtools view -q 10 -Su - 2> /dev/null |  samtools sort -o ${sampname}.metagenome.bam - 2> /dev/null
+		bowtie2 --very-sensitive --all -p ${threads} -q -x metagenome -1 ${dirname}/${name}_1.fastq -2 ${dirname}/${name}_2.fastq ${Uparam} 2> ${sampname}.bowtie2.err.txt | samtools view -q 10 -Su - 2> /dev/null |  samtools sort -n -o ${sampname}.metagenome.bam - 2> /dev/null
 	else 
 		# LEGACY samtools sort
 		bowtie2 --very-sensitive --all -p ${threads} -q -x metagenome -1 ${dirname}/${name}_1.fastq -2 ${dirname}/${name}_2.fastq ${Uparam} 2> ${sampname}.bowtie2.err.txt | samtools view -q 10 -Su - 2> /dev/null |  samtools sort - ${sampname}.metagenome 2> /dev/null
@@ -214,7 +214,7 @@ for i in ../../processed/prinseq/*_1.fastq; do
 		fi
 	fi
 	if (( $(echo "$(samtools --version | grep '^samtools' | sed 's/^samtools //' | cut -d . -f 1,2) >= 1.3" |bc -l) )); then
-		bowtie2 --very-sensitive --all -p ${threads} -q -x ${asmname} -1 ${dirname}/${name}_1.fastq -2 ${dirname}/${name}_2.fastq ${Uparam} 2> ${sampname}.bowtie2.err.txt | samtools view -q 10 -Su - 2> /dev/null |  samtools sort -o ${sampname}.${asmname}.bam - 2> /dev/null
+		bowtie2 --very-sensitive --all -p ${threads} -q -x ${asmname} -1 ${dirname}/${name}_1.fastq -2 ${dirname}/${name}_2.fastq ${Uparam} 2> ${sampname}.bowtie2.err.txt | samtools view -q 10 -Su - 2> /dev/null |  samtools sort -n -o ${sampname}.${asmname}.bam - 2> /dev/null
 	else
 		bowtie2 --very-sensitive --all -p ${threads} -q -x ${asmname} -1 ${dirname}/${name}_1.fastq -2 ${dirname}/${name}_2.fastq ${Uparam} 2> ${sampname}.bowtie2.err.txt | samtools view -q 10 -Su - 2> /dev/null |  samtools sort - ${sampname}.${asmname} 2> /dev/null
 	fi

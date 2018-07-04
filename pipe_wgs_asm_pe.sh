@@ -36,12 +36,12 @@ re="$2"
 asmname="$3"
 
 # Número de threads disponíveis para os processos
-threads=10
+threads=14
 # Número de threads para o processamento dos arquivos pmap utilizando parallel
 pmap_threads=2
 
-# Número de partições
-partitions_n=15000
+# Número de sequências dentro de cada partição
+partitions_n=100000
 
 # http://khmer.readthedocs.org/en/v1.0/choosing-table-sizes.html
 # Memória disponível = -N (n_tables) * -x (tablesize)
@@ -60,7 +60,13 @@ khmer_byte_graph_x="$((memlimitGB/${khmer_N}))e9"
 khmer_k=23
 
 # Tamanho mínimo para a avaliação das montagens, realizada pela soma dos tamanhos de todos os contigs maiors que este valor
-cutoff=300
+cutoff=200
+# Check read length:
+# perl -lane 'INIT { our $size=0; my $c = 0; } if ($.%4==2) { last if ($c > 10); $size+=length($_); $c++; } END { print $size/$c; }' ./processed/prinseq/sampleA1.scythe.cutadapt5p.filtered.prinseq_1.fastq
+read_len=150
+cutoff_perc=$(echo "scale=2; (${cutoff}/${read_len})" | bc -l)
+
+TMP_DIR="/state/partition1"
 
 # as linhas que iniciam com cerquilha são comentários
         
@@ -352,6 +358,12 @@ for samp in "${biosamples[@]}"; do
 		
 		echo "   [${name}] ..."
 		
+		if [ ! -s ${indir}/${name}.se.fq ]; then
+			echo "      Put a fake read to single end data ..."
+			echo -e "@SAMPLE0000000000/1\nNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN\n+\nIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n" > ${indir}/${name}.se.fq
+			echo -e "@SAMPLE0000000000/2\nNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN\n+\nIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n" >> ${indir}/${name}.se.fq
+		fi	
+
 		echo "      Change input files' format"
 		
 		# minia
@@ -360,7 +372,6 @@ for samp in "${biosamples[@]}"; do
 		
 		# NEWBLER
 		cat ${indir}/${name}.pe.fq             | deinterleave_pairs -o ${indir}/${name}.pe_1.fq ${indir}/${name}.pe_2.fq
-		fastq-se2ipe.pl ${indir}/${name}.se.fq | deinterleave_pairs -o ${indir}/${name}.se_1.fq ${indir}/${name}.se_2.fq
 		
 		# idba_ud
 		fastq-se2ipe.pl ${indir}/${name}.se.fq | fastq2fasta.pl -n 100 > ${indir}/${name}.se.pe.fa
@@ -380,8 +391,7 @@ for samp in "${biosamples[@]}"; do
 		newAssembly ${name}.newbler.0.d > ${name}.newbler.0.log.out.txt 2> ${name}.newbler.0.log.err.txt
 		addRun -lib PE ${name}.newbler.0.d ${indir}/${name}.pe_1.fq >> ${name}.newbler.0.log.out.txt 2>> ${name}.newbler.0.log.err.txt
 		addRun -lib PE ${name}.newbler.0.d ${indir}/${name}.pe_2.fq >> ${name}.newbler.0.log.out.txt 2>> ${name}.newbler.0.log.err.txt
-		addRun -lib SE ${name}.newbler.0.d ${indir}/${name}.se_1.fq >> ${name}.newbler.0.log.out.txt 2>> ${name}.newbler.0.log.err.txt
-		addRun -lib SE ${name}.newbler.0.d ${indir}/${name}.se_2.fq >> ${name}.newbler.0.log.out.txt 2>> ${name}.newbler.0.log.err.txt
+		addRun -lib SE ${name}.newbler.0.d ${indir}/${name}.se.fq >> ${name}.newbler.0.log.out.txt 2>> ${name}.newbler.0.log.err.txt
 		runProject -mi 95 -ml 20 -cpu ${threads} ${name}.newbler.0.d >> ${name}.newbler.0.log.out.txt 2>> ${name}.newbler.0.log.err.txt
 		
 		echo "      MEGAHIT ..."
@@ -450,11 +460,14 @@ for samp in "${biosamples[@]}"; do
 		
 		mkdir -p ${name}.meta_platanus.0.d/
 		# kak_finalClusters_all.fa
-		meta_platanus assemble -l ${cutoff} -t ${threads} -m ${memlimitGB} -f ${indir}/${name}.pe_1.fq ${indir}/${name}.pe_2.fq ${indir}/${name}.se.fq -o ${name}.meta_platanus.0.d/kak > ${name}.meta_platanus-assemble.0.log.out.txt 2> ${name}.meta_platanus-assemble.0.log.err.txt
-		meta_platanus scaffold  -k ${name}.meta_platanus.0.d/kak_kmer_occ.bin -t ${threads} -c ${name}.meta_platanus.0.d/kak_contig.fa -IP1 ${indir}/${name}.pe_1.fq ${indir}/${name}.pe_2.fq -o ${name}.meta_platanus.0.d/kak > ${name}.meta_platanus-scaffold.0.log.out.txt 2> ${name}.meta_platanus-scaffold.0.log.err.txt
+		# The parameters -c and -C must be increased with large datasets add 1 for each 50000000
+		meta_platanus_n=$(wc -l ${indir}/${name}.pe_1.fq)
+		meta_platanus_cov=$(( $(echo "scale=0; (${meta_platanus_n}/50000000)" | bc -l)+1 ))
+		meta_platanus assemble -tmp ${TMP_DIR} -k 0.15 -K 0.5 -c ${meta_platanus_cov} -C ${meta_platanus_cov} -l ${cutoff_perc} -t ${threads} -m ${memlimitGB} -f ${indir}/${name}.pe_1.fq ${indir}/${name}.pe_2.fq ${indir}/${name}.se.fq -o ${name}.meta_platanus.0.d/kak > ${name}.meta_platanus-assemble.0.log.out.txt 2> ${name}.meta_platanus-assemble.0.log.err.txt
+		meta_platanus scaffold -tmp ${TMP_DIR} -k ${name}.meta_platanus.0.d/kak_kmer_occ.bin -t ${threads} -c ${name}.meta_platanus.0.d/kak_contig.fa -IP1 ${indir}/${name}.pe_1.fq ${indir}/${name}.pe_2.fq -o ${name}.meta_platanus.0.d/kak > ${name}.meta_platanus-scaffold.0.log.out.txt 2> ${name}.meta_platanus-scaffold.0.log.err.txt
 		cd ${name}.meta_platanus.0.d/
-		meta_platanus iterate -m 21 -t 10 -k kak_kmer_occ.bin -c kak_scaffold.fa -IP1 ${indir}/../${name}.pe_1.fq ${indir}/../${name}.pe_2.fq -o kak > ../${name}.meta_platanus-iterate.0.log.out.txt 2> ../${name}.meta_platanus-iterate.0.log.err.txt
-		meta_platanus cluster_scaffold -c out_iterativeAssembly.fa -IP1 ${indir}/../${name}.pe_1.fq ${indir}/../${name}.pe_2.fq -o kak > ../${name}.meta_platanus-cluster_scaffold.0.log.out.txt 2> ../${name}.meta_platanus-cluster_scaffold.0.log.err.txt
+		meta_platanus iterate -tmp ${TMP_DIR} -m ${memlimitGB} -t ${threads} -k kak_kmer_occ.bin -c kak_scaffold.fa -IP1 ${indir}/../${name}.pe_1.fq ${indir}/../${name}.pe_2.fq -o kak > ../${name}.meta_platanus-iterate.0.log.out.txt 2> ../${name}.meta_platanus-iterate.0.log.err.txt
+		meta_platanus cluster_scaffold -tmp ${TMP_DIR} -t ${threads} -c out_iterativeAssembly.fa -IP1 ${indir}/../${name}.pe_1.fq ${indir}/../${name}.pe_2.fq -o kak > ../${name}.meta_platanus-cluster_scaffold.0.log.out.txt 2> ../${name}.meta_platanus-cluster_scaffold.0.log.err.txt
 		
 		if [ ! -e "kak_finalClusters_all.fa" ]; then
 			if [ ! -e "kak_contig.fa" ]; then
